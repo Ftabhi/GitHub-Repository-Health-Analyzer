@@ -1,9 +1,35 @@
-"""Data loading utilities for the GitHub Repository Health Analyzer."""
-from pathlib import Path
-import pandas as pd
+import requests
+from src.config import GITHUB_TOKEN
+
+BASE_URL = "https://api.github.com"
 
 
-def load_commits_csv(path: str) -> pd.DataFrame:
-    """Load commits CSV into a DataFrame."""
-    p = Path(path)
-    return pd.read_csv(p)
+class GitHubDataLoader:
+    """
+    Handles communication with the GitHub REST API.
+    """
+
+    def __init__(self):
+        self.headers = {
+            "Authorization": f"Bearer {GITHUB_TOKEN}",
+            "Accept": "application/vnd.github+json"
+        }
+
+    def get_repository(self, owner, repository):
+        """
+        Fetch repository information.
+        """
+
+        url = f"{BASE_URL}/repos/{owner}/{repository}"
+
+        response = requests.get(
+            url,
+            headers=self.headers
+        )
+
+        if response.status_code == 200:
+            return response.json()
+
+        raise Exception(
+            f"GitHub API Error: {response.status_code}\n{response.text}"
+        )

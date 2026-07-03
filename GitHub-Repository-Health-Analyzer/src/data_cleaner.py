@@ -56,11 +56,15 @@ class DataCleaner:
         file_name = f"{owner}_{repo}_repository.json"
         raw_data = self.load_json(file_name)
 
-        if isinstance(raw_data, pd.DataFrame):
-            raw_dict = raw_data.to_dict(orient="records")[0]
+        if isinstance(raw_data, list):
+            records = raw_data
         else:
-            raw_dict = dict(raw_data)
+            records = [raw_data]
 
+        if not records:
+            return pd.DataFrame()
+
+        raw_dict = records[0]
         owner_data = raw_dict.get("owner", {}) or {}
         cleaned = {
             "repository_id": raw_dict.get("id"),
@@ -91,6 +95,9 @@ class DataCleaner:
         """Clean raw commit JSON and return a DataFrame."""
         file_name = f"{owner}_{repo}_commits.json"
         raw_data = self.load_json(file_name)
+
+        if not isinstance(raw_data, list):
+            return pd.DataFrame()
 
         records: List[Dict[str, Any]] = []
         for item in raw_data:
@@ -139,6 +146,9 @@ class DataCleaner:
         file_name = f"{owner}_{repo}_contributors.json"
         raw_data = self.load_json(file_name)
 
+        if not isinstance(raw_data, list):
+            return pd.DataFrame()
+
         df = pd.DataFrame(raw_data)
         if df.empty:
             return df
@@ -154,6 +164,9 @@ class DataCleaner:
         """Clean raw issue JSON and return a DataFrame."""
         file_name = f"{owner}_{repo}_issues.json"
         raw_data = self.load_json(file_name)
+
+        if not isinstance(raw_data, list):
+            return pd.DataFrame()
 
         records: List[Dict[str, Any]] = []
         for item in raw_data:
@@ -208,3 +221,27 @@ class DataCleaner:
         """Clean and save issues data."""
         df = self.clean_issues(owner, repo)
         return self._save_dataframe(f"{owner}_{repo}_issues.csv", df)
+
+    def clean_languages(self, owner: str, repo: str) -> pd.DataFrame:
+        """Clean raw language JSON and return a DataFrame."""
+        file_name = f"{owner}_{repo}_languages.json"
+        raw_data = self.load_json(file_name)
+
+        if not isinstance(raw_data, dict):
+            return pd.DataFrame()
+
+        records = [
+            {"language": key, "bytes": int(value or 0)}
+            for key, value in raw_data.items()
+        ]
+
+        df = pd.DataFrame(records)
+        if df.empty:
+            return df
+
+        return df.sort_values("bytes", ascending=False).reset_index(drop=True)
+
+    def save_cleaned_languages(self, owner: str, repo: str) -> Path:
+        """Clean and save languages data."""
+        df = self.clean_languages(owner, repo)
+        return self._save_dataframe(f"{owner}_{repo}_languages.csv", df)
