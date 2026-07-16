@@ -4,7 +4,15 @@ import json
 import pandas as pd
 import pytest
 
-from dashboard.app import _build_metrics, _build_repository_overview, _load_repository_data, _parse_github_repository_url
+from dashboard.app import (
+    _build_chart_data,
+    _build_metrics,
+    _build_repository_overview,
+    _load_repository_data,
+    _parse_github_repository_url,
+)
+from dashboard.advanced_charts import activity_timeline
+from dashboard.charts import commit_trend_chart, contributor_chart, issue_timeline_chart, language_chart
 from dashboard.layout import _build_kpi_cards
 from src import config
 from src.data_cleaner import DataCleaner
@@ -92,6 +100,63 @@ def test_build_metrics_uses_numeric_defaults_for_empty_data() -> None:
     assert metrics["total_commits"] == 0
     assert metrics["health_score"] == 0.0
     assert metrics["primary_language"] == "Unknown"
+
+
+@pytest.mark.parametrize(
+    "repository",
+    [
+        "microsoft/vscode",
+        "facebook/react",
+        "pallets/flask",
+        "streamlit/streamlit",
+    ],
+)
+def test_core_chart_data_uses_selected_repository_rows(repository: str) -> None:
+    repository_data = _load_repository_data(repository)
+    metrics = _build_metrics(repository_data)
+    chart_data = _build_chart_data(repository_data, metrics)
+
+    assert not repository_data["repository_df"].empty
+    assert not chart_data["commits"].empty
+    assert not chart_data["contributors"].empty
+    assert not chart_data["languages"].empty
+    assert set(chart_data["issue_timeline"].columns) == {"date", "opened", "closed"}
+    assert chart_data["raw_issues"].equals(repository_data["issues_df"])
+
+
+def test_core_charts_render_empty_states_without_fake_slices() -> None:
+    empty_commits = pd.DataFrame({"date": [], "commits": []})
+    empty_issues = pd.DataFrame({"date": [], "opened": [], "closed": []})
+    empty_languages = pd.DataFrame({"language": [], "bytes": []})
+    empty_contributors = pd.DataFrame({"contributor": [], "contributions": []})
+
+    figures = [
+        commit_trend_chart(empty_commits),
+        issue_timeline_chart(empty_issues),
+        language_chart(empty_languages),
+        contributor_chart(empty_contributors),
+        activity_timeline(pd.DataFrame(), pd.DataFrame()),
+    ]
+
+    assert all(figure.layout.annotations for figure in figures)
+    assert all(len(figure.data) == 0 for figure in figures)
+
+
+def test_core_charts_include_meaningful_hover_templates() -> None:
+    commit_fig = commit_trend_chart(pd.DataFrame({"date": ["2026-07-16"], "commits": [3]}))
+    issue_fig = issue_timeline_chart(pd.DataFrame({"date": ["2026-07-16"], "opened": [2], "closed": [1]}))
+    language_fig = language_chart(pd.DataFrame({"language": ["Python"], "bytes": [1200]}))
+    contributor_fig = contributor_chart(pd.DataFrame({"contributor": ["octocat"], "contributions": [42]}))
+    activity_fig = activity_timeline(
+        pd.DataFrame({"commit_author_date": ["2026-07-16T00:00:00Z"]}),
+        pd.DataFrame({"created_at": ["2026-07-16T00:00:00Z"], "closed_at": ["2026-07-17T00:00:00Z"]}),
+    )
+
+    assert "commits" in commit_fig.data[0].hovertemplate
+    assert "opened issues" in issue_fig.data[0].hovertemplate
+    assert "bytes" in language_fig.data[0].hovertemplate
+    assert "contributions" in contributor_fig.data[0].hovertemplate
+    assert {trace.name for trace in activity_fig.data} == {"Commits", "Opened issues", "Closed issues"}
 
 
 def test_build_kpi_cards_use_real_repository_metrics() -> None:

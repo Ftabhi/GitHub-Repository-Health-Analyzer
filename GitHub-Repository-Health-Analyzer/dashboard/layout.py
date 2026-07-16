@@ -11,6 +11,7 @@ from .charts import (
     contributor_chart,
     health_score_gauge,
     issue_chart,
+    issue_timeline_chart,
     language_chart,
 )
 from .advanced_charts import (
@@ -140,23 +141,25 @@ def render_dashboard(
         unsafe_allow_html=True,
     )
 
-    render_section_title("Analytics Overview", "A polished view of repository trends and adoption.")
+    render_section_title("Core Charts", "Live Plotly charts for repository activity, issues, languages, and contributors.")
 
     chart_cols = st.columns([2, 1])
-    chart_cols[0].plotly_chart(commit_trend_chart(chart_data["commits"]), use_container_width=True, key="commit_activity_chart")
+    chart_cols[0].plotly_chart(commit_trend_chart(chart_data["commits"]), use_container_width=True, key="commit_timeline_chart")
     chart_cols[1].plotly_chart(health_score_gauge(metrics.get("health_score", 0.0)), use_container_width=True, key="repository_health_gauge")
 
     chart_cols = st.columns(2)
-    chart_cols[0].plotly_chart(contributor_chart(chart_data["contributors"]), use_container_width=True, key="top_contributors_chart")
+    chart_cols[0].plotly_chart(issue_timeline_chart(chart_data["issue_timeline"]), use_container_width=True, key="issue_timeline_chart")
     chart_cols[1].plotly_chart(language_chart(chart_data["languages"]), use_container_width=True, key="language_distribution_chart")
 
-    st.plotly_chart(issue_chart(chart_data["issues"]), use_container_width=True, key="issue_status_chart")
+    chart_cols = st.columns(2)
+    chart_cols[0].plotly_chart(contributor_chart(chart_data["contributors"]), use_container_width=True, key="contributor_leaderboard_chart")
+    chart_cols[1].plotly_chart(issue_chart(chart_data["issues"]), use_container_width=True, key="issue_status_chart")
 
     render_section_title("Advanced Engineering Analytics", "Team velocity, contributor momentum, and operational health trends.")
     advanced_cols = st.columns([1.2, 1])
-    advanced_cols[0].plotly_chart(activity_timeline(chart_data["raw_commits"]), use_container_width=True, key="repository_growth_chart")
+    advanced_cols[0].plotly_chart(activity_timeline(chart_data["raw_commits"], chart_data["raw_issues"]), use_container_width=True, key="repository_activity_chart")
     advanced_cols[0].plotly_chart(contribution_heatmap(chart_data["raw_commits"]), use_container_width=True, key="contribution_heatmap_chart")
-    advanced_cols[1].plotly_chart(leaderboard_chart(chart_data["raw_contributors"]), use_container_width=True, key="contributor_leaderboard_chart")
+    advanced_cols[1].plotly_chart(leaderboard_chart(chart_data["raw_contributors"]), use_container_width=True, key="advanced_contributor_leaderboard_chart")
     advanced_cols[1].plotly_chart(health_score_trend(chart_data["health_history"]), use_container_width=True, key="health_score_trend_chart")
 
     render_section_title("Premium Recommendations", "Actionable guidance based on current repository health and team signals.")

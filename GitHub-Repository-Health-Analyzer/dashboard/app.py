@@ -466,7 +466,7 @@ def _build_health_history(commits_df: pd.DataFrame, current_score: Any) -> pd.Da
         return pd.DataFrame()
 
     df = commits_df.copy()
-    df["commit_author_date"] = pd.to_datetime(df["commit_author_date"], errors="coerce")
+    df["commit_author_date"] = pd.to_datetime(df["commit_author_date"], errors="coerce", utc=True).dt.tz_convert(None)
     df = df.dropna(subset=["commit_author_date"])
     if df.empty:
         return pd.DataFrame()
@@ -480,6 +480,42 @@ def _build_health_history(commits_df: pd.DataFrame, current_score: Any) -> pd.Da
     )
     weekly["date"] = pd.to_datetime(weekly["week_label"], errors="coerce").dt.strftime("%Y-%m-%d")
     return weekly[["date", "health_score"]]
+
+
+def _build_issue_timeline(issues_df: pd.DataFrame) -> pd.DataFrame:
+    """Build daily opened and closed issue counts for the issue timeline."""
+    if issues_df.empty:
+        return pd.DataFrame({"date": [], "opened": [], "closed": []})
+
+    frames: List[pd.DataFrame] = []
+    if "created_at" in issues_df.columns:
+        opened = issues_df.copy()
+        opened["date"] = pd.to_datetime(opened["created_at"], errors="coerce").dt.normalize()
+        opened = opened.dropna(subset=["date"])
+        if not opened.empty:
+            frames.append(opened.groupby("date").size().reset_index(name="opened"))
+
+    if "closed_at" in issues_df.columns:
+        closed = issues_df.copy()
+        closed["date"] = pd.to_datetime(closed["closed_at"], errors="coerce").dt.normalize()
+        closed = closed.dropna(subset=["date"])
+        if not closed.empty:
+            frames.append(closed.groupby("date").size().reset_index(name="closed"))
+
+    if not frames:
+        return pd.DataFrame({"date": [], "opened": [], "closed": []})
+
+    timeline = frames[0]
+    for frame in frames[1:]:
+        timeline = timeline.merge(frame, on="date", how="outer")
+    for column in ("opened", "closed"):
+        if column not in timeline.columns:
+            timeline[column] = 0
+        timeline[column] = timeline[column].fillna(0).astype(int)
+
+    timeline = timeline.sort_values("date")
+    timeline["date"] = timeline["date"].dt.strftime("%Y-%m-%d")
+    return timeline[["date", "opened", "closed"]]
 
 
 def _build_chart_data(data: Dict[str, pd.DataFrame], metrics: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
@@ -521,20 +557,17 @@ def _build_chart_data(data: Dict[str, pd.DataFrame], metrics: Dict[str, Any]) ->
         )
     else:
         chart_data["issues"] = pd.DataFrame({"state": [], "count": []})
+    chart_data["issue_timeline"] = _build_issue_timeline(issues_df)
 
     languages_df = data["languages_df"].copy()
     if not languages_df.empty and "language" in languages_df.columns and "bytes" in languages_df.columns:
         chart_data["languages"] = languages_df.sort_values("bytes", ascending=False)
     else:
-        chart_data["languages"] = pd.DataFrame(
-            {
-                "language": [metrics.get("primary_language", "Unknown")],
-                "bytes": [1 if metrics.get("primary_language") else 0],
-            }
-        )
+        chart_data["languages"] = pd.DataFrame({"language": [], "bytes": []})
 
     chart_data["raw_commits"] = commits_df
     chart_data["raw_contributors"] = contributors_df
+    chart_data["raw_issues"] = issues_df
     chart_data["health_history"] = _build_health_history(commits_df, metrics.get("health_score", 0))
 
     return chart_data
