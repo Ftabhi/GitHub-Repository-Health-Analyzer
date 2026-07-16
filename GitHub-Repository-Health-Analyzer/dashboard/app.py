@@ -84,6 +84,18 @@ def _configure_page() -> None:
         .overview-item__value {display: block; color: #F0F6FC; font-size: 0.98rem; line-height: 1.45; overflow-wrap: anywhere;}
         .overview-item__value a {color: #58A6FF; text-decoration: none;}
         .overview-item__value a:hover {text-decoration: underline;}
+        .repository-intelligence {background: #161B22; border: 1px solid #30363D; border-radius: 18px; padding: 22px; margin-bottom: 28px;}
+        .intelligence-hero {align-items: flex-start; display: flex; justify-content: space-between; gap: 18px; margin-bottom: 20px;}
+        .intelligence-eyebrow {color: #8B949E; display: block; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 8px; text-transform: uppercase;}
+        .intelligence-score {color: #F0F6FC; font-size: 4rem; font-weight: 800; line-height: 0.95;}
+        .intelligence-hero p {color: #8B949E; font-size: 1rem; margin: 12px 0 0;}
+        .intelligence-grade {align-items: center; background: rgba(88, 166, 255, 0.12); border: 1px solid rgba(88, 166, 255, 0.34); border-radius: 14px; color: #58A6FF; display: flex; font-size: 2.45rem; font-weight: 800; justify-content: center; min-height: 82px; min-width: 96px; padding: 10px 16px;}
+        .intelligence-grid {display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 18px;}
+        .intelligence-score-card {background: #0D1117; border: 1px solid #30363D; border-radius: 12px; min-height: 130px; padding: 15px;}
+        .intelligence-score-card span {color: #8B949E; display: block; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 10px; text-transform: uppercase;}
+        .intelligence-score-card strong {color: #F0F6FC; display: block; font-size: 2rem; line-height: 1; margin-bottom: 10px;}
+        .intelligence-score-card small {color: #8B949E; display: block; font-size: 0.88rem; line-height: 1.45;}
+        .intelligence-explanation {border-top: 1px solid #30363D; color: #C9D1D9; font-size: 0.98rem; line-height: 1.65; margin: 0; padding-top: 16px;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -325,6 +337,13 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         "watchers": 0,
         "health_score": 0.0,
         "health_grade": "Pending",
+        "repository_health": 0.0,
+        "maintenance_score": 0.0,
+        "community_score": 0.0,
+        "popularity_score": 0.0,
+        "overall_grade": "Pending",
+        "health_label": "Pending",
+        "score_explanation": "Repository intelligence is unavailable until repository analytics are loaded.",
         "primary_language": "Unknown",
     }
 
@@ -383,9 +402,17 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         health_score = RepositoryHealthScore(engine).calculate_health_score()
         metrics["health_score"] = round(float(health_score.get("score", 0.0)), 2)
         metrics["health_grade"] = health_score.get("grade", "Pending")
+        metrics["repository_health"] = round(float(health_score.get("repository_health", 0.0)), 2)
+        metrics["maintenance_score"] = round(float(health_score.get("maintenance_score", 0.0)), 2)
+        metrics["community_score"] = round(float(health_score.get("community_score", 0.0)), 2)
+        metrics["popularity_score"] = round(float(health_score.get("popularity_score", 0.0)), 2)
+        metrics["overall_grade"] = health_score.get("overall_grade", metrics["health_grade"])
+        metrics["health_label"] = health_score.get("health_label", "Pending")
+        metrics["score_explanation"] = health_score.get("summary", metrics["score_explanation"])
     except (HealthScoreError, AnalyticsError):
         metrics["health_score"] = 0.0
         metrics["health_grade"] = "Pending"
+        metrics["overall_grade"] = "Pending"
 
     return metrics
 

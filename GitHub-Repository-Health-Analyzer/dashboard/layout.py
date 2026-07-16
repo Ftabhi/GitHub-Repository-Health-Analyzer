@@ -81,6 +81,13 @@ def _format_health_score(value: Any) -> str:
         return "0.0%"
 
 
+def _format_score(value: Any) -> str:
+    try:
+        return f"{float(value):.1f}"
+    except (TypeError, ValueError):
+        return "0.0"
+
+
 def _build_kpi_cards(metrics: Dict[str, Any]) -> list[tuple[str, str, str, str]]:
     """Build the executive KPI card data from precomputed dashboard metrics."""
     return [
@@ -94,7 +101,7 @@ def _build_kpi_cards(metrics: Dict[str, Any]) -> list[tuple[str, str, str, str]]
         ("Stars", _format_kpi_number(metrics.get("stars", 0)), "GitHub stars", ""),
         ("Forks", _format_kpi_number(metrics.get("forks", 0)), "Repository forks", ""),
         ("Watchers", _format_kpi_number(metrics.get("watchers", 0)), "GitHub watchers", ""),
-        ("Health Score", _format_health_score(metrics.get("health_score", 0.0)), str(metrics.get("health_grade", "Pending")), ""),
+        ("Health Score", _format_health_score(metrics.get("health_score", 0.0)), f"Grade {metrics.get('overall_grade', metrics.get('health_grade', 'Pending'))}", ""),
     ]
 
 
@@ -108,6 +115,54 @@ def _render_kpi_cards(metrics: Dict[str, Any]) -> None:
         for column, (label, value, description, _) in zip(columns, cards[row_start:row_start + 4]):
             with column:
                 render_kpi_card(label, value, description)
+
+
+def _render_repository_intelligence(metrics: Dict[str, Any]) -> None:
+    """Render the Repository Intelligence panel from the health score payload."""
+    render_section_title(
+        "Repository Intelligence",
+        "A scored view of repository health, maintenance, community strength, and popularity.",
+    )
+    sub_scores = [
+        ("Repository Health", metrics.get("repository_health", 0.0), "Activity, contributors, issue resolution, and age"),
+        ("Maintenance Score", metrics.get("maintenance_score", 0.0), "Recent commits, issue handling, and pull request flow"),
+        ("Community Score", metrics.get("community_score", 0.0), "Contributor diversity, watchers, and issue discussion"),
+        ("Popularity Score", metrics.get("popularity_score", 0.0), "Stars, forks, and watchers"),
+    ]
+    score_cards = "".join(
+        "<div class='intelligence-score-card'>"
+        f"<span>{escape(label)}</span>"
+        f"<strong>{escape(_format_score(value))}</strong>"
+        f"<small>{escape(description)}</small>"
+        "</div>"
+        for label, value, description in sub_scores
+    )
+    explanation = metrics.get("score_explanation", "Repository intelligence is unavailable.")
+    grade = metrics.get("overall_grade", metrics.get("health_grade", "Pending"))
+
+    left_col, right_col = st.columns([1.35, 1])
+    with left_col:
+        st.markdown(
+            "<section class='repository-intelligence'>"
+            "<div class='intelligence-hero'>"
+            "<div>"
+            "<span class='intelligence-eyebrow'>Overall Repository Score</span>"
+            f"<div class='intelligence-score'>{escape(_format_score(metrics.get('health_score', 0.0)))}</div>"
+            f"<p>Repository Health: {escape(str(metrics.get('health_label', 'Pending')))}</p>"
+            "</div>"
+            f"<div class='intelligence-grade'>{escape(str(grade))}</div>"
+            "</div>"
+            f"<div class='intelligence-grid'>{score_cards}</div>"
+            f"<p class='intelligence-explanation'>{escape(str(explanation))}</p>"
+            "</section>",
+            unsafe_allow_html=True,
+        )
+    with right_col:
+        st.plotly_chart(
+            health_score_gauge(metrics.get("health_score", 0.0)),
+            use_container_width=True,
+            key="repository_intelligence_gauge",
+        )
 
 
 def render_dashboard(
@@ -128,6 +183,7 @@ def render_dashboard(
 
     _render_repository_overview(repository_overview)
     _render_kpi_cards(metrics)
+    _render_repository_intelligence(metrics)
 
     st.markdown(
         "<div class='summary-grid'>"
@@ -136,7 +192,7 @@ def render_dashboard(
         "<div class='summary-card'><h3>Engineering Metrics</h3>"
         f"<p>{metrics.get('total_commits', 'N/A')} commits • {metrics.get('total_contributors', 'N/A')} contributors</p></div>"
         "<div class='summary-card'><h3>Repository Health</h3>"
-        f"<p>{metrics.get('health_score', 'N/A')}% • {metrics.get('health_grade', 'N/A')}</p></div>"
+        f"<p>{metrics.get('health_score', 'N/A')}% • Grade {metrics.get('overall_grade', 'N/A')}</p></div>"
         "</div>",
         unsafe_allow_html=True,
     )

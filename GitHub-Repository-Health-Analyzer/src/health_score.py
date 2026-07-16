@@ -1,5 +1,8 @@
 """Repository health scoring based on analytics outputs."""
+from math import log10
 from typing import Any, Dict, Optional
+
+import pandas as pd
 
 from src.analytics_engine import AnalyticsEngine, AnalyticsError
 
@@ -29,6 +32,7 @@ class RepositoryHealthScore:
 
     @staticmethod
     def _grade(score: float) -> str:
+        """Return the legacy descriptive grade label for compatibility."""
         if score >= 90:
             return "Excellent"
         if score >= 80:
@@ -40,6 +44,18 @@ class RepositoryHealthScore:
         if score >= 40:
             return "Needs Attention"
         return "Critical"
+
+    @staticmethod
+    def _letter_grade(score: float) -> str:
+        if score >= 95:
+            return "A+"
+        if score >= 85:
+            return "A"
+        if score >= 70:
+            return "B"
+        if score >= 55:
+            return "C"
+        return "D"
 
     @staticmethod
     def _safe_division(numerator: float, denominator: float, default: float = 0.0) -> float:
@@ -138,6 +154,123 @@ class RepositoryHealthScore:
             + min(20.0, average_comments * 4.0)
         )
 
+    def recent_maintenance_score(self) -> float:
+        """Score recent maintenance from latest commits, pushes, and recent commit volume."""
+        commits_df = self.analytics_engine.commits_df
+        repository_df = self.analytics_engine.repository_df
+        reference_time = pd.Timestamp.now(tz="UTC")
+        latest_signal: Optional[pd.Timestamp] = None
+        recent_commits = 0
+
+        if commits_df is not None and not commits_df.empty and "commit_author_date" in commits_df.columns:
+            dates = pd.to_datetime(commits_df["commit_author_date"], errors="coerce", utc=True).dropna()
+            if not dates.empty:
+                latest_signal = dates.max()
+                reference_time = max(reference_time, latest_signal)
+                recent_commits = int((dates >= reference_time - pd.Timedelta(days=30)).sum())
+
+        if repository_df is not None and not repository_df.empty and "pushed_at" in repository_df.columns:
+            pushed_at = pd.to_datetime(repository_df.iloc[0].get("pushed_at"), errors="coerce", utc=True)
+            if pd.notna(pushed_at):
+                latest_signal = pushed_at if latest_signal is None else max(latest_signal, pushed_at)
+                reference_time = max(reference_time, pushed_at)
+
+        if latest_signal is None:
+            return 0.0
+
+        days_since_activity = max((reference_time - latest_signal).days, 0)
+        if days_since_activity <= 7:
+            recency_score = 60.0
+        elif days_since_activity <= 30:
+            recency_score = 45.0
+        elif days_since_activity <= 90:
+            recency_score = 25.0
+        elif days_since_activity <= 180:
+            recency_score = 12.0
+        else:
+            recency_score = 0.0
+
+        volume_score = min(40.0, recent_commits * 2.0)
+        return self._clamp(recency_score + volume_score)
+
+    def maintenance_score(self) -> float:
+        """Score project maintenance from recency, commits, issue resolution, and PR flow."""
+        return self._clamp(
+            self.recent_maintenance_score() * 0.35
+            + self.commit_score() * 0.25
+            + self.issue_score() * 0.25
+            + self.pull_request_score() * 0.15
+        )
+
+    def popularity_score(self) -> float:
+        """Score repository popularity from stars, forks, and watchers."""
+        try:
+            repo_summary = self.analytics_engine.repository_summary()
+        except AnalyticsError as exc:
+            raise HealthScoreError("Unable to calculate popularity score") from exc
+
+        stars = max(float(repo_summary.get("stars", 0)), 0.0)
+        forks = max(float(repo_summary.get("forks", 0)), 0.0)
+        watchers = max(float(repo_summary.get("watchers", 0)), 0.0)
+        return self._clamp(
+            min(50.0, log10(stars + 1.0) / 6.0 * 50.0)
+            + min(30.0, log10(forks + 1.0) / 5.5 * 30.0)
+            + min(20.0, log10(watchers + 1.0) / 6.0 * 20.0)
+        )
+
+    def repository_health_score(self) -> float:
+        """Score core repository health from activity, resolution, diversity, and age."""
+        try:
+            repo_summary = self.analytics_engine.repository_summary()
+        except AnalyticsError as exc:
+            raise HealthScoreError("Unable to calculate repository health score") from exc
+
+        age_days = max(float(repo_summary.get("age_days", 0)), 0.0)
+        age_score = min(100.0, age_days / 365.0 * 25.0 + 75.0) if age_days else 50.0
+        return self._clamp(
+            self.commit_score() * 0.30
+            + self.contributor_score() * 0.25
+            + self.issue_score() * 0.25
+            + self.recent_maintenance_score() * 0.10
+            + age_score * 0.10
+        )
+
+    def _build_explanation(
+        self,
+        intelligence_breakdown: Dict[str, float],
+        overall_score: float,
+    ) -> str:
+        strongest_key = max(intelligence_breakdown, key=intelligence_breakdown.get)
+        weakest_key = min(intelligence_breakdown, key=intelligence_breakdown.get)
+        labels = {
+            "repository_health": "repository health",
+            "maintenance": "maintenance",
+            "community": "community",
+            "popularity": "popularity",
+        }
+
+        try:
+            repo_summary = self.analytics_engine.repository_summary()
+            commit_stats = self.analytics_engine.commit_statistics()
+            issue_stats = self.analytics_engine.issue_statistics()
+            contributor_stats = self.analytics_engine.contributor_statistics()
+        except AnalyticsError:
+            return (
+                f"The repository scored {overall_score:.1f} based on available activity, "
+                "community, maintenance, and popularity signals."
+            )
+
+        return (
+            f"The repository scored {overall_score:.1f} because {labels[strongest_key]} is strongest "
+            f"({intelligence_breakdown[strongest_key]:.1f}/100), while {labels[weakest_key]} is the main limiter "
+            f"({intelligence_breakdown[weakest_key]:.1f}/100). The calculation reflects "
+            f"{int(commit_stats.get('total_commits', 0)):,} recent fetched commits, "
+            f"{int(contributor_stats.get('total_contributors', 0)):,} contributors, "
+            f"{float(issue_stats.get('issue_close_rate', 0.0)):.1f}% issue closure, "
+            f"{int(repo_summary.get('stars', 0)):,} stars, and "
+            f"{int(repo_summary.get('age_days', 0)):,} days of repository history."
+        )
+
     def calculate_health_score(self) -> Dict[str, Any]:
         """Calculate the final repository health score and breakdown."""
         breakdown = {
@@ -149,19 +282,40 @@ class RepositoryHealthScore:
             "community_engagement": round(self.community_score(), 2),
         }
 
-        total_score = sum(
+        legacy_total_score = sum(
             breakdown[key] * weight for key, weight in self.WEIGHTS.items()
         )
-        normalized_score = round(self._clamp(total_score), 2)
-        grade = self._grade(normalized_score)
-        summary = (
-            "A strong repository with balanced commit activity, contributor engagement, "
-            "issue resolution, and community involvement."
+        legacy_score = round(self._clamp(legacy_total_score), 2)
+
+        intelligence_breakdown = {
+            "repository_health": round(self.repository_health_score(), 2),
+            "maintenance": round(self.maintenance_score(), 2),
+            "community": round(self.community_score(), 2),
+            "popularity": round(self.popularity_score(), 2),
+        }
+        overall_score = round(
+            self._clamp(
+                intelligence_breakdown["repository_health"] * 0.35
+                + intelligence_breakdown["maintenance"] * 0.30
+                + intelligence_breakdown["community"] * 0.20
+                + intelligence_breakdown["popularity"] * 0.15
+            ),
+            2,
         )
+        grade = self._letter_grade(overall_score)
+        summary = self._build_explanation(intelligence_breakdown, overall_score)
 
         return {
-            "score": normalized_score,
+            "score": overall_score,
             "grade": grade,
+            "health_label": self._grade(legacy_score),
             "summary": summary,
             "metric_breakdown": breakdown,
+            "legacy_health_score": legacy_score,
+            "repository_health": intelligence_breakdown["repository_health"],
+            "maintenance_score": intelligence_breakdown["maintenance"],
+            "community_score": intelligence_breakdown["community"],
+            "popularity_score": intelligence_breakdown["popularity"],
+            "overall_grade": grade,
+            "intelligence_breakdown": intelligence_breakdown,
         }

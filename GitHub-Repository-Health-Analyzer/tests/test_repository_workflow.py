@@ -99,6 +99,11 @@ def test_build_metrics_uses_numeric_defaults_for_empty_data() -> None:
 
     assert metrics["total_commits"] == 0
     assert metrics["health_score"] == 0.0
+    assert metrics["repository_health"] == 0.0
+    assert metrics["maintenance_score"] == 0.0
+    assert metrics["community_score"] == 0.0
+    assert metrics["popularity_score"] == 0.0
+    assert metrics["overall_grade"] == "Pending"
     assert metrics["primary_language"] == "Unknown"
 
 
@@ -157,6 +162,34 @@ def test_core_charts_include_meaningful_hover_templates() -> None:
     assert "bytes" in language_fig.data[0].hovertemplate
     assert "contributions" in contributor_fig.data[0].hovertemplate
     assert {trace.name for trace in activity_fig.data} == {"Commits", "Opened issues", "Closed issues"}
+
+
+def test_repository_intelligence_scores_are_data_driven_per_repository() -> None:
+    repositories = [
+        "microsoft/vscode",
+        "facebook/react",
+        "streamlit/streamlit",
+        "pallets/flask",
+    ]
+    results = {}
+
+    for repository in repositories:
+        metrics = _build_metrics(_load_repository_data(repository))
+        results[repository] = metrics
+
+        assert 0 <= metrics["health_score"] <= 100
+        assert 0 <= metrics["repository_health"] <= 100
+        assert 0 <= metrics["maintenance_score"] <= 100
+        assert 0 <= metrics["community_score"] <= 100
+        assert 0 <= metrics["popularity_score"] <= 100
+        assert metrics["overall_grade"] in {"A+", "A", "B", "C", "D"}
+        assert metrics["health_grade"] == metrics["overall_grade"]
+        assert metrics["health_label"] != "Pending"
+        assert str(metrics["score_explanation"]).startswith("The repository scored")
+
+    rounded_scores = {round(metrics["health_score"], 2) for metrics in results.values()}
+    assert len(rounded_scores) == len(repositories)
+    assert results["streamlit/streamlit"]["health_score"] != results["pallets/flask"]["health_score"]
 
 
 def test_build_kpi_cards_use_real_repository_metrics() -> None:
