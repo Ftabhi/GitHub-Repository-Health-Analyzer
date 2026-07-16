@@ -66,20 +66,25 @@ class DataCleaner:
 
         raw_dict = records[0]
         owner_data = raw_dict.get("owner", {}) or {}
+        license_data = raw_dict.get("license") or {}
         cleaned = {
             "repository_id": raw_dict.get("id"),
             "repository_name": raw_dict.get("name"),
             "full_name": raw_dict.get("full_name"),
             "owner_login": owner_data.get("login"),
             "owner_id": owner_data.get("id"),
+            "description": raw_dict.get("description"),
+            "repository_url": raw_dict.get("html_url"),
             "stars": raw_dict.get("stargazers_count"),
             "forks": raw_dict.get("forks_count"),
             "watchers": raw_dict.get("watchers_count"),
             "open_issues": raw_dict.get("open_issues_count"),
             "language": raw_dict.get("language"),
+            "license": license_data.get("spdx_id") or license_data.get("name"),
             "created_at": raw_dict.get("created_at"),
             "updated_at": raw_dict.get("updated_at"),
             "pushed_at": raw_dict.get("pushed_at"),
+            "visibility": raw_dict.get("visibility") or ("private" if raw_dict.get("private") else "public"),
             "size": raw_dict.get("size"),
             "default_branch": raw_dict.get("default_branch"),
         }
@@ -172,6 +177,7 @@ class DataCleaner:
         for item in raw_data:
             user = item.get("user") or {}
             assignee = item.get("assignee") or {}
+            pull_request = item.get("pull_request") or {}
             records.append(
                 {
                     "issue_id": item.get("id"),
@@ -186,7 +192,8 @@ class DataCleaner:
                     "user_id": user.get("id"),
                     "assignee_login": assignee.get("login"),
                     "assignee_id": assignee.get("id"),
-                    "is_pull_request": bool(item.get("pull_request")),
+                    "is_pull_request": bool(pull_request),
+                    "pull_request_merged_at": pull_request.get("merged_at"),
                 }
             )
 
@@ -197,8 +204,11 @@ class DataCleaner:
         df["created_at"] = self._to_datetime(df["created_at"])
         df["updated_at"] = self._to_datetime(df["updated_at"])
         df["closed_at"] = self._to_datetime(df["closed_at"])
+        df["pull_request_merged_at"] = self._to_datetime(df["pull_request_merged_at"])
         df = df.drop_duplicates(subset=["issue_id"])
         df = df.fillna({"title": "", "state": "", "comments": 0})
+        if "pull_request_merged_at" not in df.columns:
+            df["pull_request_merged_at"] = pd.NaT
 
         return df
 

@@ -1,5 +1,6 @@
 """Page layout for the Streamlit dashboard."""
 
+from html import escape
 from typing import Any, Dict
 
 import streamlit as st
@@ -20,7 +21,100 @@ from .advanced_charts import (
 )
 
 
-def render_dashboard(metrics: Dict[str, Any], chart_data: Dict[str, Any], insights: Dict[str, Any]) -> None:
+def _render_repository_overview(repository_overview: Dict[str, str]) -> None:
+    """Render live repository metadata returned by the GitHub API."""
+    if not repository_overview:
+        st.info("Repository overview is unavailable for this analysis.")
+        return
+
+    repository_url = repository_overview.get("Repository URL", "")
+    escaped_url = escape(repository_url)
+    overview_items = [
+        ("Repository Name", repository_overview.get("Repository Name", "Not available")),
+        ("Owner", repository_overview.get("Owner", "Not available")),
+        ("Description", repository_overview.get("Description", "Not available")),
+        ("Repository URL", f"<a href='{escaped_url}' target='_blank' rel='noopener noreferrer'>{escaped_url}</a>" if repository_url else "Not available"),
+        ("Primary Language", repository_overview.get("Primary Language", "Not available")),
+        ("Stars", repository_overview.get("Stars", "Not available")),
+        ("Forks", repository_overview.get("Forks", "Not available")),
+        ("Watchers", repository_overview.get("Watchers", "Not available")),
+        ("Open Issues", repository_overview.get("Open Issues", "Not available")),
+        ("License", repository_overview.get("License", "Not available")),
+        ("Default Branch", repository_overview.get("Default Branch", "Not available")),
+        ("Repository Age", repository_overview.get("Repository Age", "Not available")),
+        ("Created Date", repository_overview.get("Created Date", "Not available")),
+        ("Last Updated", repository_overview.get("Last Updated", "Not available")),
+        ("Last Push Date", repository_overview.get("Last Push Date", "Not available")),
+        ("Repository Visibility", repository_overview.get("Repository Visibility", "Not available")),
+        ("Repository Size", repository_overview.get("Repository Size", "Not available")),
+    ]
+    detail_html = "".join(
+        "<div class='overview-item'>"
+        f"<span class='overview-item__label'>{escape(label)}</span>"
+        f"<span class='overview-item__value'>{value if label == 'Repository URL' else escape(str(value))}</span>"
+        "</div>"
+        for label, value in overview_items
+    )
+
+    st.markdown(
+        "<section class='repository-overview'>"
+        "<div class='section-title'><h2>Repository Overview</h2>"
+        "<p>Live repository metadata from the GitHub API for the selected repository.</p></div>"
+        f"<div class='overview-grid'>{detail_html}</div>"
+        "</section>",
+        unsafe_allow_html=True,
+    )
+
+
+def _format_kpi_number(value: Any) -> str:
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return "0"
+
+
+def _format_health_score(value: Any) -> str:
+    try:
+        return f"{float(value):.1f}%"
+    except (TypeError, ValueError):
+        return "0.0%"
+
+
+def _build_kpi_cards(metrics: Dict[str, Any]) -> list[tuple[str, str, str, str]]:
+    """Build the executive KPI card data from precomputed dashboard metrics."""
+    return [
+        ("Total Commits", _format_kpi_number(metrics.get("total_commits", 0)), "Fetched commit activity", ""),
+        ("Total Contributors", _format_kpi_number(metrics.get("total_contributors", 0)), "Unique contributors", ""),
+        ("Open Issues", _format_kpi_number(metrics.get("open_issues", 0)), "Unresolved issue backlog", ""),
+        ("Closed Issues", _format_kpi_number(metrics.get("closed_issues", 0)), "Resolved issue volume", ""),
+        ("Open Pull Requests", _format_kpi_number(metrics.get("open_pull_requests", 0)), "Pull requests awaiting merge", ""),
+        ("Merged Pull Requests", _format_kpi_number(metrics.get("merged_pull_requests", 0)), "Pull requests merged", ""),
+        ("Repository Age", f"{_format_kpi_number(metrics.get('repository_age_days', 0))} days", "Time since repository creation", ""),
+        ("Stars", _format_kpi_number(metrics.get("stars", 0)), "GitHub stars", ""),
+        ("Forks", _format_kpi_number(metrics.get("forks", 0)), "Repository forks", ""),
+        ("Watchers", _format_kpi_number(metrics.get("watchers", 0)), "GitHub watchers", ""),
+        ("Health Score", _format_health_score(metrics.get("health_score", 0.0)), str(metrics.get("health_grade", "Pending")), ""),
+    ]
+
+
+def _render_kpi_cards(metrics: Dict[str, Any]) -> None:
+    """Render the executive KPI card grid from precomputed dashboard metrics."""
+    render_section_title("Executive KPIs", "Live engineering signals for the analyzed repository.")
+    cards = _build_kpi_cards(metrics)
+
+    for row_start in range(0, len(cards), 4):
+        columns = st.columns(4)
+        for column, (label, value, description, _) in zip(columns, cards[row_start:row_start + 4]):
+            with column:
+                render_kpi_card(label, value, description)
+
+
+def render_dashboard(
+    metrics: Dict[str, Any],
+    chart_data: Dict[str, Any],
+    insights: Dict[str, Any],
+    repository_overview: Dict[str, str],
+) -> None:
     """Render the main dashboard layout with KPIs, advanced charts, and premium insights."""
     st.markdown(
         "<div style='display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 26px;'>"
@@ -30,6 +124,9 @@ def render_dashboard(metrics: Dict[str, Any], chart_data: Dict[str, Any], insigh
         "</div>",
         unsafe_allow_html=True,
     )
+
+    _render_repository_overview(repository_overview)
+    _render_kpi_cards(metrics)
 
     st.markdown(
         "<div class='summary-grid'>"
@@ -42,16 +139,6 @@ def render_dashboard(metrics: Dict[str, Any], chart_data: Dict[str, Any], insigh
         "</div>",
         unsafe_allow_html=True,
     )
-
-    kpi_cols = st.columns(4)
-    with kpi_cols[0]:
-        render_kpi_card("Total Commits", metrics.get("total_commits", "N/A"), "Historical commit volume", "↗ 8%")
-    with kpi_cols[1]:
-        render_kpi_card("Contributors", metrics.get("total_contributors", "N/A"), "Active collaborators", "↗ 4%")
-    with kpi_cols[2]:
-        render_kpi_card("Open Issues", metrics.get("open_issues", "N/A"), "Current backlog", "▼ 3%")
-    with kpi_cols[3]:
-        render_kpi_card("Health Score", metrics.get("health_score", "N/A"), metrics.get("health_grade", ""), "Stable")
 
     render_section_title("Analytics Overview", "A polished view of repository trends and adoption.")
 

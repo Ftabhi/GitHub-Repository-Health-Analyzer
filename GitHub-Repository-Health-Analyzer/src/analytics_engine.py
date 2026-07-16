@@ -114,12 +114,14 @@ class AnalyticsEngine:
         df = self._validate_df(issues_df or self.issues_df, "Issues")
         df = df.copy()
         df["state"] = df["state"].fillna("unknown").astype(str).str.lower()
+        if "is_pull_request" in df.columns:
+            df = df[df["is_pull_request"] != True]
 
         total_issues = int(len(df))
         open_issues = int((df["state"] == "open").sum())
         closed_issues = int((df["state"] == "closed").sum())
         issue_close_rate = round(closed_issues / total_issues * 100, 2) if total_issues else 0.0
-        average_comments = float(df["comments"].fillna(0).mean())
+        average_comments = float(df["comments"].fillna(0).mean()) if total_issues else 0.0
 
         return {
             "total_issues": total_issues,
@@ -127,6 +129,41 @@ class AnalyticsEngine:
             "closed_issues": closed_issues,
             "issue_close_rate": issue_close_rate,
             "average_comments": round(average_comments, 2),
+        }
+
+    def pull_request_statistics(self, issues_df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
+        """Return pull request analytics from cleaned issue data."""
+        df = self._validate_df(issues_df or self.issues_df, "Issues")
+        df = df.copy()
+        if "is_pull_request" not in df.columns:
+            return {
+                "total_pull_requests": 0,
+                "open_pull_requests": 0,
+                "closed_pull_requests": 0,
+                "merged_pull_requests": 0,
+            }
+
+        pr_df = df[df["is_pull_request"] == True].copy()
+        if pr_df.empty:
+            return {
+                "total_pull_requests": 0,
+                "open_pull_requests": 0,
+                "closed_pull_requests": 0,
+                "merged_pull_requests": 0,
+            }
+
+        pr_df["state"] = pr_df["state"].fillna("unknown").astype(str).str.lower()
+        merged_prs = 0
+        if "pull_request_merged_at" in pr_df.columns:
+            merged_prs = int(pd.to_datetime(pr_df["pull_request_merged_at"], errors="coerce").notna().sum())
+        elif "closed_at" in pr_df.columns:
+            merged_prs = int((pr_df["state"] == "closed").sum())
+
+        return {
+            "total_pull_requests": int(len(pr_df)),
+            "open_pull_requests": int((pr_df["state"] == "open").sum()),
+            "closed_pull_requests": int((pr_df["state"] == "closed").sum()),
+            "merged_pull_requests": merged_prs,
         }
 
     def language_statistics(self, languages_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:

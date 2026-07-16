@@ -1,22 +1,26 @@
 """Reusable Streamlit components for the dashboard."""
 
+from html import escape
 from typing import Any
 
 import streamlit as st
 
-from .theme import CARD_COLOR, PRIMARY_COLOR, SECONDARY_COLOR, TEXT_COLOR, BORDER_COLOR, BORDER_RADIUS
-
 
 def _kpi_icon(label: str) -> str:
     icons = {
-        "Total Commits": "📈",
-        "Contributors": "👥",
-        "Open Issues": "🐞",
-        "Repository Age": "⏳",
-        "Health Score": "💚",
-        "Primary Language": "🧩",
+        "Total Commits": "&#128200;",
+        "Total Contributors": "&#128101;",
+        "Open Issues": "&#9679;",
+        "Closed Issues": "&#10003;",
+        "Open Pull Requests": "&#8644;",
+        "Merged Pull Requests": "&#10022;",
+        "Repository Age": "&#9201;",
+        "Stars": "&#9733;",
+        "Forks": "&#9282;",
+        "Watchers": "&#128065;",
+        "Health Score": "&#9829;",
     }
-    return icons.get(label, "✨")
+    return icons.get(label, "&#9671;")
 
 
 def render_section_title(title: str, subtitle: str) -> None:
@@ -25,8 +29,8 @@ def render_section_title(title: str, subtitle: str) -> None:
         f"""
         <div class='section-title'>
             <div>
-                <h2>{title}</h2>
-                <p>{subtitle}</p>
+                <h2>{escape(str(title))}</h2>
+                <p>{escape(str(subtitle))}</p>
             </div>
         </div>
         """,
@@ -35,19 +39,20 @@ def render_section_title(title: str, subtitle: str) -> None:
 
 
 def render_kpi_card(label: str, value: Any, subtitle: str, trend: str = "") -> None:
-    """Render a premium KPI card with icon, title, value, subtitle, and trend."""
+    """Render a premium KPI card with icon, title, value, subtitle, and optional trend."""
     icon = _kpi_icon(label)
+    trend_markup = f"<span class='kpi-card__trend'>{escape(str(trend))}</span>" if trend else ""
     st.markdown(
         f"""
         <div class='kpi-card'>
             <div class='kpi-card__top'>
                 <span class='kpi-card__icon'>{icon}</span>
-                <span class='kpi-card__label'>{label}</span>
+                <span class='kpi-card__label'>{escape(str(label))}</span>
             </div>
-            <div class='kpi-card__value'>{value}</div>
+            <div class='kpi-card__value'>{escape(str(value))}</div>
             <div class='kpi-card__bottom'>
-                <span class='kpi-card__subtitle'>{subtitle}</span>
-                <span class='kpi-card__trend'>{trend}</span>
+                <span class='kpi-card__subtitle'>{escape(str(subtitle))}</span>
+                {trend_markup}
             </div>
         </div>
         """,
@@ -60,9 +65,9 @@ def render_metric_box(label: str, value: Any, description: str) -> None:
     st.markdown(
         f"""
         <div class='metric-box'>
-            <div class='metric-box__label'>{label}</div>
-            <div class='metric-box__value'>{value}</div>
-            <div class='metric-box__description'>{description}</div>
+            <div class='metric-box__label'>{escape(str(label))}</div>
+            <div class='metric-box__value'>{escape(str(value))}</div>
+            <div class='metric-box__description'>{escape(str(description))}</div>
         </div>
         """,
         unsafe_allow_html=True,

@@ -55,12 +55,12 @@ def _configure_page() -> None:
         .stButton>button:hover, .stDownloadButton>button:hover {opacity: 0.92; transform: translateY(-1px); transition: all 0.18s ease;}
         .section-title h2 {margin: 0; color: #F0F6FC; font-size: 1.72rem; line-height: 1.12;}
         .section-title p {margin: 10px 0 0; color: #8B949E; font-size: 0.98rem; line-height: 1.6;}
-        .kpi-card {background: #21262D; border: 1px solid #30363D; border-radius: 18px; padding: 24px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22); color: #F0F6FC; margin-bottom: 18px; min-height: 150px; transition: background 0.2s ease;}
-        .kpi-card:hover {background: #262f38;}
+        .kpi-card {background: #21262D; border: 1px solid #30363D; border-radius: 14px; padding: 22px; box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22); color: #F0F6FC; margin-bottom: 18px; min-height: 154px; transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;}
+        .kpi-card:hover {background: #262f38; border-color: #58A6FF; transform: translateY(-2px);}
         .kpi-card__top {display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 16px;}
-        .kpi-card__icon {font-size: 24px;}
+        .kpi-card__icon {align-items: center; background: rgba(88, 166, 255, 0.12); border: 1px solid rgba(88, 166, 255, 0.22); border-radius: 10px; color: #58A6FF; display: inline-flex; font-size: 20px; height: 36px; justify-content: center; width: 36px;}
         .kpi-card__label {font-size: 0.82rem; color: #8B949E; letter-spacing: 0.09em; text-transform: uppercase;}
-        .kpi-card__value {font-size: 2.4rem; font-weight: 700; margin-bottom: 10px; line-height: 1;}
+        .kpi-card__value {font-size: 2.35rem; font-weight: 700; margin-bottom: 10px; line-height: 1; overflow-wrap: anywhere;}
         .kpi-card__subtitle {font-size: 0.95rem; color: #8B949E;}
         .kpi-card__trend {font-size: 0.9rem; color: #58A6FF;}
         .summary-grid {display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; margin-bottom: 28px;}
@@ -77,6 +77,13 @@ def _configure_page() -> None:
         .dashboard-sidebar-note {color: #8B949E; font-size: 0.94rem; line-height: 1.6;}
         .dashboard-section-box {background: #161B22; border: 1px solid #30363D; border-radius: 18px; padding: 20px;}
         .dashboard-section-box h3 {margin-top: 0; color: #F0F6FC;}
+        .repository-overview {background: #161B22; border: 1px solid #30363D; border-radius: 18px; padding: 22px; margin-bottom: 28px;}
+        .overview-grid {display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 18px;}
+        .overview-item {background: #0D1117; border: 1px solid #30363D; border-radius: 12px; padding: 14px 16px; min-height: 84px;}
+        .overview-item__label {display: block; color: #8B949E; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 8px;}
+        .overview-item__value {display: block; color: #F0F6FC; font-size: 0.98rem; line-height: 1.45; overflow-wrap: anywhere;}
+        .overview-item__value a {color: #58A6FF; text-decoration: none;}
+        .overview-item__value a:hover {text-decoration: underline;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -300,25 +307,34 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
     )
 
     metrics: Dict[str, Any] = {
-        "total_commits": "N/A",
-        "total_contributors": "N/A",
-        "total_issues": "N/A",
-        "open_issues": "N/A",
-        "issue_close_rate": "N/A",
-        "average_comments": "N/A",
-        "total_contributions": "N/A",
-        "top_contributor": "N/A",
-        "top_contributor_commits": "N/A",
-        "repository_age_days": "N/A",
-        "health_score": "N/A",
-        "health_grade": "N/A",
-        "primary_language": "N/A",
+        "total_commits": 0,
+        "total_contributors": 0,
+        "total_issues": 0,
+        "open_issues": 0,
+        "closed_issues": 0,
+        "open_pull_requests": 0,
+        "merged_pull_requests": 0,
+        "issue_close_rate": 0.0,
+        "average_comments": 0.0,
+        "total_contributions": 0,
+        "top_contributor": "Unknown",
+        "top_contributor_commits": 0,
+        "repository_age_days": 0,
+        "stars": 0,
+        "forks": 0,
+        "watchers": 0,
+        "health_score": 0.0,
+        "health_grade": "Pending",
+        "primary_language": "Unknown",
     }
 
     try:
         repo_summary = engine.repository_summary()
         metrics["repository_age_days"] = int(repo_summary.get("age_days", 0))
-        metrics["primary_language"] = repo_summary.get("language") or "N/A"
+        metrics["primary_language"] = repo_summary.get("language") or "Unknown"
+        metrics["stars"] = int(repo_summary.get("stars", 0))
+        metrics["forks"] = int(repo_summary.get("forks", 0))
+        metrics["watchers"] = int(repo_summary.get("watchers", 0))
     except AnalyticsError:
         pass
 
@@ -326,42 +342,122 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         commit_stats = engine.commit_statistics()
         metrics["total_commits"] = int(commit_stats.get("total_commits", 0))
     except AnalyticsError:
-        metrics["total_commits"] = "N/A"
+        metrics["total_commits"] = 0
 
     try:
         contributor_stats = engine.contributor_statistics()
         metrics["total_contributors"] = int(contributor_stats.get("total_contributors", 0))
         metrics["total_contributions"] = int(contributor_stats.get("total_contributions", 0))
         top_contributor = contributor_stats.get("top_contributor", {}) or {}
-        metrics["top_contributor"] = top_contributor.get("login", "N/A")
+        metrics["top_contributor"] = top_contributor.get("login") or "Unknown"
         metrics["top_contributor_commits"] = int(top_contributor.get("contributions", 0))
     except AnalyticsError:
-        metrics["total_contributors"] = "N/A"
-        metrics["total_contributions"] = "N/A"
-        metrics["top_contributor"] = "N/A"
-        metrics["top_contributor_commits"] = "N/A"
+        metrics["total_contributors"] = 0
+        metrics["total_contributions"] = 0
+        metrics["top_contributor"] = "Unknown"
+        metrics["top_contributor_commits"] = 0
 
     try:
         issue_stats = engine.issue_statistics()
         metrics["open_issues"] = int(issue_stats.get("open_issues", 0))
+        metrics["closed_issues"] = int(issue_stats.get("closed_issues", 0))
         metrics["total_issues"] = int(issue_stats.get("total_issues", 0))
         metrics["issue_close_rate"] = float(issue_stats.get("issue_close_rate", 0.0))
         metrics["average_comments"] = float(issue_stats.get("average_comments", 0.0))
     except AnalyticsError:
-        metrics["open_issues"] = "N/A"
-        metrics["total_issues"] = "N/A"
-        metrics["issue_close_rate"] = "N/A"
-        metrics["average_comments"] = "N/A"
+        metrics["open_issues"] = 0
+        metrics["closed_issues"] = 0
+        metrics["total_issues"] = 0
+        metrics["issue_close_rate"] = 0.0
+        metrics["average_comments"] = 0.0
+
+    try:
+        pull_request_stats = engine.pull_request_statistics()
+        metrics["open_pull_requests"] = int(pull_request_stats.get("open_pull_requests", 0))
+        metrics["merged_pull_requests"] = int(pull_request_stats.get("merged_pull_requests", 0))
+    except AnalyticsError:
+        metrics["open_pull_requests"] = 0
+        metrics["merged_pull_requests"] = 0
 
     try:
         health_score = RepositoryHealthScore(engine).calculate_health_score()
         metrics["health_score"] = round(float(health_score.get("score", 0.0)), 2)
-        metrics["health_grade"] = health_score.get("grade", "N/A")
+        metrics["health_grade"] = health_score.get("grade", "Pending")
     except (HealthScoreError, AnalyticsError):
-        metrics["health_score"] = "N/A"
-        metrics["health_grade"] = "N/A"
+        metrics["health_score"] = 0.0
+        metrics["health_grade"] = "Pending"
 
     return metrics
+
+
+def _get_repository_value(row: pd.Series, key: str, default: Any = "Not available") -> Any:
+    """Return a display-safe repository metadata value from a repository row."""
+    value = row.get(key, default)
+    if pd.isna(value):
+        return default
+    return value
+
+
+def _format_count(value: Any) -> str:
+    if pd.isna(value):
+        return "Not available"
+    try:
+        return f"{int(value):,}"
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _format_date(value: Any) -> str:
+    timestamp = pd.to_datetime(value, errors="coerce", utc=True)
+    if pd.isna(timestamp):
+        return "Not available"
+    return timestamp.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _repository_age_days(value: Any) -> str:
+    created_at = pd.to_datetime(value, errors="coerce", utc=True)
+    if pd.isna(created_at):
+        return "Not available"
+    return f"{max((pd.Timestamp.now(tz='UTC') - created_at).days, 0):,} days"
+
+
+def _format_repository_size(value: Any) -> str:
+    if pd.isna(value):
+        return "Not available"
+    try:
+        size_kb = int(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if size_kb >= 1024:
+        return f"{size_kb / 1024:.1f} MB"
+    return f"{size_kb:,} KB"
+
+
+def _build_repository_overview(repository_df: pd.DataFrame) -> Dict[str, str]:
+    """Build the Repository Overview section from live GitHub repository metadata."""
+    if repository_df.empty:
+        return {}
+
+    row = repository_df.iloc[0]
+    return {
+        "Repository Name": str(_get_repository_value(row, "repository_name")),
+        "Owner": str(_get_repository_value(row, "owner_login")),
+        "Description": str(_get_repository_value(row, "description", "No description provided")),
+        "Repository URL": str(_get_repository_value(row, "repository_url")),
+        "Primary Language": str(_get_repository_value(row, "language")),
+        "Stars": _format_count(_get_repository_value(row, "stars")),
+        "Forks": _format_count(_get_repository_value(row, "forks")),
+        "Watchers": _format_count(_get_repository_value(row, "watchers")),
+        "Open Issues": _format_count(_get_repository_value(row, "open_issues")),
+        "License": str(_get_repository_value(row, "license", "No license detected")),
+        "Default Branch": str(_get_repository_value(row, "default_branch")),
+        "Repository Age": _repository_age_days(_get_repository_value(row, "created_at")),
+        "Created Date": _format_date(_get_repository_value(row, "created_at")),
+        "Last Updated": _format_date(_get_repository_value(row, "updated_at")),
+        "Last Push Date": _format_date(_get_repository_value(row, "pushed_at")),
+        "Repository Visibility": str(_get_repository_value(row, "visibility")).title(),
+        "Repository Size": _format_repository_size(_get_repository_value(row, "size")),
+    }
 
 
 def _build_health_history(commits_df: pd.DataFrame, current_score: Any) -> pd.DataFrame:
@@ -489,10 +585,11 @@ def _load_processed_data(repository: str) -> Tuple[Dict[str, pd.DataFrame], Dict
 
 def _render_dashboard_for_repository(repository: str) -> None:
     repository_data, metrics = _load_processed_data(repository)
+    repository_overview = _build_repository_overview(repository_data["repository_df"])
     chart_data = _build_chart_data(repository_data, metrics)
     dashboard_insights = generate_engineering_insights(metrics)
     _render_export_controls(metrics, chart_data)
-    render_dashboard(metrics, chart_data, dashboard_insights)
+    render_dashboard(metrics, chart_data, dashboard_insights, repository_overview)
 
 
 def _analyze_repository(repository_url: str, stage_container: st.delta_generator.DeltaGenerator) -> str:
