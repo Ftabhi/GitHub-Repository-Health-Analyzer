@@ -1,10 +1,13 @@
 """Repository health scoring based on analytics outputs."""
+import logging
 from math import log10
 from typing import Any, Dict, Optional
 
 import pandas as pd
 
 from src.analytics_engine import AnalyticsEngine, AnalyticsError
+
+logger = logging.getLogger(__name__)
 
 
 class HealthScoreError(Exception):
@@ -62,22 +65,30 @@ class RepositoryHealthScore:
         return numerator / denominator if denominator else default
 
     def commit_score(self) -> float:
-        """Score commit activity on a 0-100 scale."""
+        """Score commit activity on a 0-100 scale. Returns 0.0 when no commit data is available."""
         try:
             commit_stats = self.analytics_engine.commit_statistics()
         except AnalyticsError as exc:
-            raise HealthScoreError("Unable to calculate commit score") from exc
+            logger.debug(
+                "health_score.commit_score: no commit data available (%s). Returning 0.0.",
+                exc,
+            )
+            return 0.0
 
         average_commits = float(commit_stats.get("average_commits_per_day", 0.0))
         commit_activity = min(100.0, average_commits * 25.0)
         return self._clamp(commit_activity)
 
     def contributor_score(self) -> float:
-        """Score contributor activity on a 0-100 scale."""
+        """Score contributor activity on a 0-100 scale. Returns 0.0 when no contributor data is available."""
         try:
             contributor_stats = self.analytics_engine.contributor_statistics()
         except AnalyticsError as exc:
-            raise HealthScoreError("Unable to calculate contributor score") from exc
+            logger.debug(
+                "health_score.contributor_score: no contributor data available (%s). Returning 0.0.",
+                exc,
+            )
+            return 0.0
 
         total_contributors = float(contributor_stats.get("total_contributors", 0))
         average_contributions = float(contributor_stats.get("average_contributions", 0.0))
@@ -88,15 +99,27 @@ class RepositoryHealthScore:
         return self._clamp(contributor_activity)
 
     def issue_score(self) -> float:
-        """Score issue resolution on a 0-100 scale."""
+        """Score issue resolution on a 0-100 scale.
+
+        Repositories with no issues (disabled or zero) receive a neutral score of 50.0
+        rather than failing — having no issues is not a negative signal.
+        """
         try:
             issue_stats = self.analytics_engine.issue_statistics()
         except AnalyticsError as exc:
-            raise HealthScoreError("Unable to calculate issue score") from exc
+            logger.debug(
+                "health_score.issue_score: no issue data available (%s). "
+                "Returning neutral score of 50.0 (no issues is not a negative signal).",
+                exc,
+            )
+            return 50.0
 
         close_rate = float(issue_stats.get("issue_close_rate", 0.0))
         open_issues = float(issue_stats.get("open_issues", 0))
         total_issues = float(issue_stats.get("total_issues", 0))
+        if total_issues == 0:
+            # No issues at all — neutral score
+            return 50.0
         open_issue_penalty = self._safe_division(open_issues, total_issues) * 50.0
         issue_activity = self._clamp(close_rate * 0.8 + (100.0 - open_issue_penalty) * 0.2)
         return issue_activity
@@ -120,13 +143,23 @@ class RepositoryHealthScore:
         """Score repository growth based on stars, forks and commit velocity."""
         try:
             repo_summary = self.analytics_engine.repository_summary()
-            commit_stats = self.analytics_engine.commit_statistics()
         except AnalyticsError as exc:
-            raise HealthScoreError("Unable to calculate repository growth score") from exc
+            logger.debug(
+                "health_score.repository_growth_score: no repository data available (%s). Returning 0.0.",
+                exc,
+            )
+            return 0.0
 
-        stars = float(repo_summary.get("stars", 0))
-        forks = float(repo_summary.get("forks", 0))
-        commits_per_day = float(commit_stats.get("average_commits_per_day", 0.0))
+        stars = float(repo_summary.get("stars", 0) or 0)
+        forks = float(repo_summary.get("forks", 0) or 0)
+
+        # Commit velocity is optional — use 0 if commits are unavailable
+        commits_per_day = 0.0
+        try:
+            commit_stats = self.analytics_engine.commit_statistics()
+            commits_per_day = float(commit_stats.get("average_commits_per_day", 0.0))
+        except AnalyticsError:
+            pass
 
         growth_score = (
             min(50.0, min(stars / 20.0, 50.0))
@@ -136,17 +169,36 @@ class RepositoryHealthScore:
         return self._clamp(growth_score)
 
     def community_score(self) -> float:
-        """Score community engagement based on contributors, watchers and issue interaction."""
+        """Score community engagement based on contributors, watchers and issue interaction.
+
+        Each sub-signal degrades gracefully to 0 when data is unavailable.
+        """
+        total_contributors = 0.0
         try:
             contributor_stats = self.analytics_engine.contributor_statistics()
-            repo_summary = self.analytics_engine.repository_summary()
-            issue_stats = self.analytics_engine.issue_statistics()
+            total_contributors = float(contributor_stats.get("total_contributors", 0) or 0)
         except AnalyticsError as exc:
-            raise HealthScoreError("Unable to calculate community score") from exc
+            logger.debug(
+                "health_score.community_score: contributor data unavailable (%s). Using 0.", exc
+            )
 
-        total_contributors = float(contributor_stats.get("total_contributors", 0))
-        watchers = float(repo_summary.get("watchers", 0))
-        average_comments = float(issue_stats.get("average_comments", 0.0))
+        watchers = 0.0
+        try:
+            repo_summary = self.analytics_engine.repository_summary()
+            watchers = float(repo_summary.get("watchers", 0) or 0)
+        except AnalyticsError as exc:
+            logger.debug(
+                "health_score.community_score: repository data unavailable (%s). Using 0.", exc
+            )
+
+        average_comments = 0.0
+        try:
+            issue_stats = self.analytics_engine.issue_statistics()
+            average_comments = float(issue_stats.get("average_comments", 0.0) or 0.0)
+        except AnalyticsError as exc:
+            logger.debug(
+                "health_score.community_score: issue data unavailable (%s). Using 0.", exc
+            )
 
         return self._clamp(
             min(40.0, total_contributors * 4.0)
@@ -203,15 +255,19 @@ class RepositoryHealthScore:
         )
 
     def popularity_score(self) -> float:
-        """Score repository popularity from stars, forks, and watchers."""
+        """Score repository popularity from stars, forks, and watchers. Returns 0.0 when data is unavailable."""
         try:
             repo_summary = self.analytics_engine.repository_summary()
         except AnalyticsError as exc:
-            raise HealthScoreError("Unable to calculate popularity score") from exc
+            logger.debug(
+                "health_score.popularity_score: no repository data available (%s). Returning 0.0.",
+                exc,
+            )
+            return 0.0
 
-        stars = max(float(repo_summary.get("stars", 0)), 0.0)
-        forks = max(float(repo_summary.get("forks", 0)), 0.0)
-        watchers = max(float(repo_summary.get("watchers", 0)), 0.0)
+        stars = max(float(repo_summary.get("stars", 0) or 0), 0.0)
+        forks = max(float(repo_summary.get("forks", 0) or 0), 0.0)
+        watchers = max(float(repo_summary.get("watchers", 0) or 0), 0.0)
         return self._clamp(
             min(50.0, log10(stars + 1.0) / 6.0 * 50.0)
             + min(30.0, log10(forks + 1.0) / 5.5 * 30.0)
@@ -220,13 +276,18 @@ class RepositoryHealthScore:
 
     def repository_health_score(self) -> float:
         """Score core repository health from activity, resolution, diversity, and age."""
+        age_score = 50.0
         try:
             repo_summary = self.analytics_engine.repository_summary()
+            age_days = max(float(repo_summary.get("age_days", 0) or 0), 0.0)
+            age_score = min(100.0, age_days / 365.0 * 25.0 + 75.0) if age_days else 50.0
         except AnalyticsError as exc:
-            raise HealthScoreError("Unable to calculate repository health score") from exc
+            logger.debug(
+                "health_score.repository_health_score: no repository data available (%s). "
+                "Using default age_score=50.0.",
+                exc,
+            )
 
-        age_days = max(float(repo_summary.get("age_days", 0)), 0.0)
-        age_score = min(100.0, age_days / 365.0 * 25.0 + 75.0) if age_days else 50.0
         return self._clamp(
             self.commit_score() * 0.30
             + self.contributor_score() * 0.25
@@ -251,24 +312,43 @@ class RepositoryHealthScore:
 
         try:
             repo_summary = self.analytics_engine.repository_summary()
-            commit_stats = self.analytics_engine.commit_statistics()
-            issue_stats = self.analytics_engine.issue_statistics()
-            contributor_stats = self.analytics_engine.contributor_statistics()
+            stars = int(repo_summary.get("stars", 0) or 0)
+            age_days = int(repo_summary.get("age_days", 0) or 0)
         except AnalyticsError:
-            return (
-                f"The repository scored {overall_score:.1f} based on available activity, "
-                "community, maintenance, and popularity signals."
-            )
+            repo_summary = {}
+            stars = 0
+            age_days = 0
+
+        total_commits = 0
+        try:
+            commit_stats = self.analytics_engine.commit_statistics()
+            total_commits = int(commit_stats.get("total_commits", 0) or 0)
+        except AnalyticsError:
+            pass
+
+        total_contributors = 0
+        try:
+            contributor_stats = self.analytics_engine.contributor_statistics()
+            total_contributors = int(contributor_stats.get("total_contributors", 0) or 0)
+        except AnalyticsError:
+            pass
+
+        issue_close_rate = 0.0
+        try:
+            issue_stats = self.analytics_engine.issue_statistics()
+            issue_close_rate = float(issue_stats.get("issue_close_rate", 0.0) or 0.0)
+        except AnalyticsError:
+            pass
 
         return (
             f"The repository scored {overall_score:.1f} because {labels[strongest_key]} is strongest "
             f"({intelligence_breakdown[strongest_key]:.1f}/100), while {labels[weakest_key]} is the main limiter "
             f"({intelligence_breakdown[weakest_key]:.1f}/100). The calculation reflects "
-            f"{int(commit_stats.get('total_commits', 0)):,} recent fetched commits, "
-            f"{int(contributor_stats.get('total_contributors', 0)):,} contributors, "
-            f"{float(issue_stats.get('issue_close_rate', 0.0)):.1f}% issue closure, "
-            f"{int(repo_summary.get('stars', 0)):,} stars, and "
-            f"{int(repo_summary.get('age_days', 0)):,} days of repository history."
+            f"{total_commits:,} recent fetched commits, "
+            f"{total_contributors:,} contributors, "
+            f"{issue_close_rate:.1f}% issue closure, "
+            f"{stars:,} stars, and "
+            f"{age_days:,} days of repository history."
         )
 
     def calculate_health_score(self) -> Dict[str, Any]:

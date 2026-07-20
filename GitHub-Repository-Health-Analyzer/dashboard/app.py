@@ -1390,14 +1390,21 @@ def _analyze_repository(repository_url: str, stage_container: st.delta_generator
     advance("Running analytics", "success")
 
     advance("Calculating repository health", "running")
-    engine = AnalyticsEngine(
-        repository_df=repository_data["repository_df"],
-        commits_df=repository_data["commits_df"],
-        contributors_df=repository_data["contributors_df"],
-        issues_df=repository_data["issues_df"],
-        languages_df=repository_data["languages_df"],
-    )
-    RepositoryHealthScore(engine).calculate_health_score()
+    try:
+        engine = AnalyticsEngine(
+            repository_df=repository_data["repository_df"],
+            commits_df=repository_data["commits_df"],
+            contributors_df=repository_data["contributors_df"],
+            issues_df=repository_data["issues_df"],
+            languages_df=repository_data["languages_df"],
+        )
+        RepositoryHealthScore(engine).calculate_health_score()
+    except (HealthScoreError, AnalyticsError) as exc:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "_analyze_repository: health score calculation failed for %s/%s: %s",
+            owner, repo, exc,
+        )
     advance("Calculating repository health", "success")
 
     advance("Updating dashboard", "running")
