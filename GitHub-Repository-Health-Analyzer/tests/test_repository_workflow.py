@@ -505,3 +505,84 @@ def test_calculate_health_score_succeeds_with_only_repo_data() -> None:
     assert result["popularity_score"] > 0.0
     assert result["grade"] in {"A+", "A", "B", "C", "D"}
     assert result["summary"].startswith("The repository scored")
+
+
+def test_main_session_state_updates_after_analysis(monkeypatch) -> None:
+    """Verify that st.session_state is updated to select the new repo on success.
+
+    And that it cleans up/resets selectbox key on failures.
+    """
+    import streamlit as st
+    from dashboard.app import main
+
+    # Mock st.session_state
+    session_state = {"repository_url_input": "https://github.com/pallets/flask"}
+    monkeypatch.setattr(st, "session_state", session_state)
+
+    # Mock st.sidebar and its container methods to avoid ScriptRunContext errors
+    class MockContainer:
+        def markdown(self, *args, **kwargs): pass
+        def info(self, *args, **kwargs): pass
+        def download_button(self, *args, **kwargs): pass
+
+    class MockSidebar:
+        def container(self):
+            return MockContainer()
+        def markdown(self, *args, **kwargs): pass
+        def info(self, *args, **kwargs): pass
+        def download_button(self, *args, **kwargs): pass
+
+    monkeypatch.setattr(st, "sidebar", MockSidebar())
+    monkeypatch.setattr(st, "success", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "error", lambda *args, **kwargs: None)
+
+    class MockSpinner:
+        def __enter__(self): return self
+        def __exit__(self, exc_type, exc_val, exc_tb): pass
+    monkeypatch.setattr(st, "spinner", lambda *args, **kwargs: MockSpinner())
+
+    # Mock helper functions in app.py to simulate UI logic
+    monkeypatch.setattr("dashboard.app._configure_page", lambda: None)
+    monkeypatch.setattr("dashboard.app._discover_repositories", lambda: ["pallets/flask"])
+    monkeypatch.setattr("dashboard.app._render_dashboard_for_repository", lambda repo: None)
+
+    # First case: Successful analysis
+    def mock_render_sidebar_success(discovered_repos):
+        # User entered pallets/flask and clicked analyze
+        return "https://github.com/pallets/flask", True, ""
+
+    monkeypatch.setattr("dashboard.app.render_sidebar", mock_render_sidebar_success)
+    monkeypatch.setattr("dashboard.app._analyze_repository", lambda url, container: "pallets/flask")
+    monkeypatch.setattr("dashboard.app.st.cache_data", type("CacheData", (), {"clear": lambda self=None: None})())
+
+    rerun_called = False
+    def mock_rerun():
+        nonlocal rerun_called
+        rerun_called = True
+
+    monkeypatch.setattr(st, "rerun", mock_rerun)
+
+    main()
+
+    assert rerun_called is True
+    assert session_state.get("selected_repository") == "pallets/flask"
+    assert session_state.get("sidebar_repo_selectbox") == "pallets/flask"
+    assert session_state.get("repository_url_input") == ""
+
+    # Second case: Analysis fails
+    def mock_render_sidebar_fail(discovered_repos):
+        return "https://github.com/invalid/repo", True, "pallets/flask"
+
+    monkeypatch.setattr("dashboard.app.render_sidebar", mock_render_sidebar_fail)
+    
+    def mock_analyze_fail(url, container):
+        raise ValueError("Invalid URL")
+
+    monkeypatch.setattr("dashboard.app._analyze_repository", mock_analyze_fail)
+
+    rerun_called = False
+    main()
+
+    # Should clear selectbox selection state and selected_repository on failure
+    assert session_state.get("selected_repository") == ""
+    assert session_state.get("sidebar_repo_selectbox") == ""

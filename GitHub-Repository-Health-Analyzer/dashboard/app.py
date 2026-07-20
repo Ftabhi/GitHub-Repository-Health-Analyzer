@@ -1432,6 +1432,9 @@ def main() -> None:
         try:
             selected_repository = _analyze_repository(repository_url, stage_container)
             st.session_state["selected_repository"] = selected_repository
+            st.session_state["sidebar_repo_selectbox"] = selected_repository
+            if "repository_url_input" in st.session_state:
+                st.session_state["repository_url_input"] = ""
             st.cache_data.clear()  # clear cache so discovered repositories updates
             st.success(f"Analysis complete for {selected_repository}.")
             st.rerun()
@@ -1440,31 +1443,37 @@ def main() -> None:
             st.error(str(exc))
             selected_repository = ""
             st.session_state["selected_repository"] = ""
+            st.session_state["sidebar_repo_selectbox"] = ""
         except GitHubNotFoundError:
             _reset_stage_statuses(stage_container, "Validating repository", "failed")
             st.error("Repository not found on GitHub. Please verify the URL.")
             selected_repository = ""
             st.session_state["selected_repository"] = ""
+            st.session_state["sidebar_repo_selectbox"] = ""
         except GitHubRateLimitError:
             _reset_stage_statuses(stage_container, "Fetching repository metadata", "failed")
             st.error("GitHub API rate limit reached. Please wait and try again.")
             selected_repository = ""
             st.session_state["selected_repository"] = ""
+            st.session_state["sidebar_repo_selectbox"] = ""
         except GitHubPrivateRepositoryError:
             _reset_stage_statuses(stage_container, "Fetching repository metadata", "failed")
             st.error("Unable to access repository. It may be private or require different credentials.")
             selected_repository = ""
             st.session_state["selected_repository"] = ""
+            st.session_state["sidebar_repo_selectbox"] = ""
         except GitHubAPIError as exc:
             _reset_stage_statuses(stage_container, "Fetching repository metadata", "failed")
             st.error(f"GitHub API error: {exc}")
             selected_repository = ""
             st.session_state["selected_repository"] = ""
+            st.session_state["sidebar_repo_selectbox"] = ""
         except (DataStorageError, DataCleaningError, AnalyticsError, HealthScoreError) as exc:
             _reset_stage_statuses(stage_container, "Running analytics", "failed")
             st.error(f"Repository analysis failed: {exc}")
             selected_repository = ""
             st.session_state["selected_repository"] = ""
+            st.session_state["sidebar_repo_selectbox"] = ""
 
     if selected_repository:
         with st.spinner("Loading analytics..."):
