@@ -96,6 +96,21 @@ def _configure_page() -> None:
         .intelligence-score-card strong {color: #F0F6FC; display: block; font-size: 2rem; line-height: 1; margin-bottom: 10px;}
         .intelligence-score-card small {color: #8B949E; display: block; font-size: 0.88rem; line-height: 1.45;}
         .intelligence-explanation {border-top: 1px solid #30363D; color: #C9D1D9; font-size: 0.98rem; line-height: 1.65; margin: 0; padding-top: 16px;}
+        .engineering-insights-section, .engineering-recommendations-section {margin-bottom: 28px;}
+        .engineering-insights-grid, .engineering-actions-grid {display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));}
+        .engineering-card {background: #161B22; border: 1px solid #30363D; border-left: 4px solid #58A6FF; border-radius: 14px; color: #F0F6FC; min-height: 168px; padding: 18px; transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;}
+        .engineering-card:hover {background: #1f272f; transform: translateY(-2px);}
+        .engineering-card__top {align-items: center; display: flex; justify-content: space-between; gap: 12px; margin-bottom: 14px;}
+        .engineering-card__icon {align-items: center; background: rgba(88, 166, 255, 0.12); border: 1px solid rgba(88, 166, 255, 0.24); border-radius: 10px; color: #58A6FF; display: inline-flex; font-size: 1rem; height: 34px; justify-content: center; width: 34px;}
+        .engineering-card__severity {border: 1px solid #30363D; border-radius: 999px; color: #C9D1D9; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.08em; padding: 5px 9px; text-transform: uppercase;}
+        .engineering-card h3 {color: #FFFFFF; font-size: 1.02rem; line-height: 1.35; margin: 0 0 10px;}
+        .engineering-card p {color: #C9D1D9; font-size: 0.94rem; line-height: 1.55; margin: 0;}
+        .engineering-card--good {border-left-color: #3FB950;}
+        .engineering-card--good .engineering-card__icon {background: rgba(63, 185, 80, 0.12); border-color: rgba(63, 185, 80, 0.26); color: #3FB950;}
+        .engineering-card--warning {border-left-color: #D29922;}
+        .engineering-card--warning .engineering-card__icon {background: rgba(210, 153, 34, 0.12); border-color: rgba(210, 153, 34, 0.28); color: #D29922;}
+        .engineering-card--critical {border-left-color: #F85149;}
+        .engineering-card--critical .engineering-card__icon {background: rgba(248, 81, 73, 0.12); border-color: rgba(248, 81, 73, 0.28); color: #F85149;}
         </style>
         """,
         unsafe_allow_html=True,
@@ -345,6 +360,17 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         "health_label": "Pending",
         "score_explanation": "Repository intelligence is unavailable until repository analytics are loaded.",
         "primary_language": "Unknown",
+        "days_since_last_commit": 0,
+        "recent_commits_30_days": 0,
+        "previous_commits_30_days": 0,
+        "commit_activity_change_pct": 0.0,
+        "top_contributor_share": 0.0,
+        "total_pull_requests": 0,
+        "pull_request_backlog_ratio": 0.0,
+        "issue_backlog_ratio": 0.0,
+        "language_count": 0,
+        "has_description": False,
+        "has_license": False,
     }
 
     try:
@@ -357,11 +383,42 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
     except AnalyticsError:
         pass
 
+    repository_df = data["repository_df"]
+    if not repository_df.empty:
+        repo_row = repository_df.iloc[0]
+        description = repo_row.get("description")
+        license_value = repo_row.get("license")
+        metrics["has_description"] = isinstance(description, str) and bool(description.strip())
+        metrics["has_license"] = isinstance(license_value, str) and bool(license_value.strip())
+
     try:
         commit_stats = engine.commit_statistics()
         metrics["total_commits"] = int(commit_stats.get("total_commits", 0))
     except AnalyticsError:
         metrics["total_commits"] = 0
+
+    commits_df = data["commits_df"]
+    if not commits_df.empty and "commit_author_date" in commits_df.columns:
+        commit_dates = pd.to_datetime(commits_df["commit_author_date"], errors="coerce", utc=True).dropna()
+        if not commit_dates.empty:
+            latest_commit = commit_dates.max()
+            metrics["days_since_last_commit"] = max(
+                int((pd.Timestamp.now(tz="UTC") - latest_commit).days),
+                0,
+            )
+            recent_start = latest_commit - pd.Timedelta(days=30)
+            previous_start = latest_commit - pd.Timedelta(days=60)
+            recent_commits = int((commit_dates >= recent_start).sum())
+            previous_commits = int(((commit_dates >= previous_start) & (commit_dates < recent_start)).sum())
+            metrics["recent_commits_30_days"] = recent_commits
+            metrics["previous_commits_30_days"] = previous_commits
+            if previous_commits:
+                metrics["commit_activity_change_pct"] = round(
+                    (recent_commits - previous_commits) / previous_commits * 100,
+                    2,
+                )
+            elif recent_commits:
+                metrics["commit_activity_change_pct"] = 100.0
 
     try:
         contributor_stats = engine.contributor_statistics()
@@ -370,6 +427,11 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         top_contributor = contributor_stats.get("top_contributor", {}) or {}
         metrics["top_contributor"] = top_contributor.get("login") or "Unknown"
         metrics["top_contributor_commits"] = int(top_contributor.get("contributions", 0))
+        if metrics["total_contributions"]:
+            metrics["top_contributor_share"] = round(
+                metrics["top_contributor_commits"] / metrics["total_contributions"] * 100,
+                2,
+            )
     except AnalyticsError:
         metrics["total_contributors"] = 0
         metrics["total_contributions"] = 0
@@ -383,6 +445,11 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
         metrics["total_issues"] = int(issue_stats.get("total_issues", 0))
         metrics["issue_close_rate"] = float(issue_stats.get("issue_close_rate", 0.0))
         metrics["average_comments"] = float(issue_stats.get("average_comments", 0.0))
+        if metrics["total_issues"]:
+            metrics["issue_backlog_ratio"] = round(
+                metrics["open_issues"] / metrics["total_issues"] * 100,
+                2,
+            )
     except AnalyticsError:
         metrics["open_issues"] = 0
         metrics["closed_issues"] = 0
@@ -392,11 +459,22 @@ def _build_metrics(data: Dict[str, pd.DataFrame]) -> Dict[str, Any]:
 
     try:
         pull_request_stats = engine.pull_request_statistics()
+        metrics["total_pull_requests"] = int(pull_request_stats.get("total_pull_requests", 0))
         metrics["open_pull_requests"] = int(pull_request_stats.get("open_pull_requests", 0))
         metrics["merged_pull_requests"] = int(pull_request_stats.get("merged_pull_requests", 0))
+        if metrics["total_pull_requests"]:
+            metrics["pull_request_backlog_ratio"] = round(
+                metrics["open_pull_requests"] / metrics["total_pull_requests"] * 100,
+                2,
+            )
     except AnalyticsError:
+        metrics["total_pull_requests"] = 0
         metrics["open_pull_requests"] = 0
         metrics["merged_pull_requests"] = 0
+
+    languages_df = data["languages_df"]
+    if not languages_df.empty and "language" in languages_df.columns:
+        metrics["language_count"] = int(languages_df["language"].nunique(dropna=True))
 
     try:
         health_score = RepositoryHealthScore(engine).calculate_health_score()

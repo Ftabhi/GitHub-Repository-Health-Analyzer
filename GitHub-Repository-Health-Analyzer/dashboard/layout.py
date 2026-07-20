@@ -165,6 +165,67 @@ def _render_repository_intelligence(metrics: Dict[str, Any]) -> None:
         )
 
 
+def _render_insight_card(item: Any) -> str:
+    """Return HTML for an engineering insight or recommendation card."""
+    if isinstance(item, dict):
+        severity = str(item.get("severity", "Info"))
+        icon = str(item.get("icon", "&#9432;"))
+        title = str(item.get("title", "Engineering signal"))
+        explanation = str(item.get("explanation", "Metric-backed signal is unavailable."))
+    else:
+        severity = "Info"
+        icon = "&#9432;"
+        title = str(item)
+        explanation = str(item)
+
+    severity_class = severity.lower()
+    return (
+        f"<div class='engineering-card engineering-card--{escape(severity_class)}'>"
+        "<div class='engineering-card__top'>"
+        f"<span class='engineering-card__icon'>{icon}</span>"
+        f"<span class='engineering-card__severity'>{escape(severity)}</span>"
+        "</div>"
+        f"<h3>{escape(title)}</h3>"
+        f"<p>{escape(explanation)}</p>"
+        "</div>"
+    )
+
+
+def _render_engineering_insights(insights: Dict[str, Any]) -> None:
+    """Render deterministic engineering insights and recommendation cards."""
+    render_section_title(
+        "Engineering Insights",
+        "Decision-support signals generated from repository analytics and health scoring.",
+    )
+
+    insight_items = insights.get("insights", [])
+    recommendation_items = insights.get("recommendations", [])
+    insight_html = "".join(_render_insight_card(item) for item in insight_items)
+    recommendation_html = "".join(_render_insight_card(item) for item in recommendation_items)
+
+    st.markdown(
+        "<section class='engineering-insights-section'>"
+        "<div class='engineering-insights-grid'>"
+        f"{insight_html}"
+        "</div>"
+        "</section>",
+        unsafe_allow_html=True,
+    )
+
+    render_section_title(
+        "Recommendations",
+        "Actionable next steps tied directly to detected repository conditions.",
+    )
+    st.markdown(
+        "<section class='engineering-recommendations-section'>"
+        "<div class='engineering-actions-grid'>"
+        f"{recommendation_html}"
+        "</div>"
+        "</section>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_dashboard(
     metrics: Dict[str, Any],
     chart_data: Dict[str, Any],
@@ -218,25 +279,16 @@ def render_dashboard(
     advanced_cols[1].plotly_chart(leaderboard_chart(chart_data["raw_contributors"]), use_container_width=True, key="advanced_contributor_leaderboard_chart")
     advanced_cols[1].plotly_chart(health_score_trend(chart_data["health_history"]), use_container_width=True, key="health_score_trend_chart")
 
-    render_section_title("Premium Recommendations", "Actionable guidance based on current repository health and team signals.")
-    rec_cols = st.columns([2, 1])
+    _render_engineering_insights(insights)
+
+    rec_cols = st.columns([1, 1, 1, 1])
     with rec_cols[0]:
-        st.markdown("<div style='background: #161B22; border: 1px solid #30363D; border-radius: 18px; padding: 20px; margin-bottom: 18px;'>", unsafe_allow_html=True)
-        st.markdown("<h3 style='margin-top: 0; color: #F0F6FC;'>Key Insights</h3>", unsafe_allow_html=True)
-        for insight in insights.get("insights", []):
-            st.markdown(f"<p style='color: #C9D1D9; margin: 8px 0 12px;'>&#8226; {insight}</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<div style='background: #161B22; border: 1px solid #30363D; border-radius: 18px; padding: 20px;'>", unsafe_allow_html=True)
-        st.markdown("<h3 style='margin-top: 0; color: #F0F6FC;'>Recommendations</h3>", unsafe_allow_html=True)
-        for recommendation in insights.get("recommendations", []):
-            st.markdown(f"<p style='color: #C9D1D9; margin: 8px 0 12px;'>&#8226; {recommendation}</p>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with rec_cols[1]:
         render_metric_box("Top Contributor", metrics.get("top_contributor", "N/A"), "Most active team member this period")
+    with rec_cols[1]:
         render_metric_box("Contributions", metrics.get("total_contributions", "N/A"), "Across the top contributors")
+    with rec_cols[2]:
         render_metric_box("Issue Close Rate", f"{metrics.get('issue_close_rate', 'N/A')}%", "Resolution velocity")
+    with rec_cols[3]:
         render_metric_box("Avg Comments", metrics.get("average_comments", "N/A"), "Collaboration depth")
 
     st.markdown(

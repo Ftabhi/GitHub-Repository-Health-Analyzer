@@ -13,6 +13,7 @@ from dashboard.app import (
 )
 from dashboard.advanced_charts import activity_timeline
 from dashboard.charts import commit_trend_chart, contributor_chart, issue_timeline_chart, language_chart
+from dashboard.insights import generate_engineering_insights
 from dashboard.layout import _build_kpi_cards
 from src import config
 from src.data_cleaner import DataCleaner
@@ -114,6 +115,7 @@ def test_build_metrics_uses_numeric_defaults_for_empty_data() -> None:
         "facebook/react",
         "pallets/flask",
         "streamlit/streamlit",
+        "tensorflow/tensorflow",
     ],
 )
 def test_core_chart_data_uses_selected_repository_rows(repository: str) -> None:
@@ -170,6 +172,7 @@ def test_repository_intelligence_scores_are_data_driven_per_repository() -> None
         "facebook/react",
         "streamlit/streamlit",
         "pallets/flask",
+        "tensorflow/tensorflow",
     ]
     results = {}
 
@@ -190,6 +193,63 @@ def test_repository_intelligence_scores_are_data_driven_per_repository() -> None
     rounded_scores = {round(metrics["health_score"], 2) for metrics in results.values()}
     assert len(rounded_scores) == len(repositories)
     assert results["streamlit/streamlit"]["health_score"] != results["pallets/flask"]["health_score"]
+
+
+def test_engineering_insights_are_structured_unique_and_data_driven() -> None:
+    repositories = [
+        "microsoft/vscode",
+        "facebook/react",
+        "streamlit/streamlit",
+        "pallets/flask",
+        "tensorflow/tensorflow",
+    ]
+    fingerprints = set()
+
+    for repository in repositories:
+        metrics = _build_metrics(_load_repository_data(repository))
+        output = generate_engineering_insights(metrics)
+        insights = output["insights"]
+        recommendations = output["recommendations"]
+
+        assert insights
+        assert recommendations
+        assert all(isinstance(item, dict) for item in insights)
+        assert all(isinstance(item, dict) for item in recommendations)
+
+        for item in insights + recommendations:
+            assert item["severity"] in {"Info", "Good", "Warning", "Critical"}
+            assert item["icon"]
+            assert item["title"]
+            assert item["explanation"]
+            assert "placeholder" not in item["explanation"].lower()
+            assert "N/A" not in item["explanation"]
+
+        insight_titles = [item["title"] for item in insights]
+        recommendation_titles = [item["title"] for item in recommendations]
+        assert len(insight_titles) == len(set(insight_titles))
+        assert len(recommendation_titles) == len(set(recommendation_titles))
+
+        fingerprint = (
+            tuple(item["title"] for item in insights),
+            tuple(item["title"] for item in recommendations),
+        )
+        fingerprints.add(fingerprint)
+
+    assert len(fingerprints) == len(repositories)
+
+
+def test_engineering_insights_react_to_specific_repository_conditions() -> None:
+    vscode_output = generate_engineering_insights(_build_metrics(_load_repository_data("microsoft/vscode")))
+    flask_output = generate_engineering_insights(_build_metrics(_load_repository_data("pallets/flask")))
+    streamlit_output = generate_engineering_insights(_build_metrics(_load_repository_data("streamlit/streamlit")))
+
+    vscode_titles = {item["title"] for item in vscode_output["recommendations"]}
+    flask_titles = {item["title"] for item in flask_output["recommendations"]}
+    streamlit_titles = {item["title"] for item in streamlit_output["insights"]}
+
+    assert "Reduce long-open issues" in vscode_titles
+    assert "Increase release cadence" in flask_titles
+    assert "Repository is healthy and actively evolving" in streamlit_titles
 
 
 def test_build_kpi_cards_use_real_repository_metrics() -> None:
