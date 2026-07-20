@@ -38,13 +38,22 @@ def render_section_title(title: str, subtitle: str) -> None:
     )
 
 
-def render_kpi_card(label: str, value: Any, subtitle: str, trend: str = "") -> None:
-    """Render a premium KPI card with icon, title, value, subtitle, and optional trend."""
+def render_kpi_card(label: str, value: Any, subtitle: str, trend: str = "", variant: str = "") -> None:
+    """Render a premium KPI card with icon, title, value, subtitle, optional trend, and color variant.
+
+    Args:
+        label:   Card title / metric name.
+        value:   Primary display value.
+        subtitle: Secondary description line.
+        trend:   Optional trend text shown bottom-right (e.g. "↑ 12%").
+        variant: Optional CSS modifier class suffix: '', 'success', 'warning', 'danger', 'accent'.
+    """
     icon = _kpi_icon(label)
+    variant_class = f" kpi-card--{escape(variant)}" if variant else ""
     trend_markup = f"<span class='kpi-card__trend'>{escape(str(trend))}</span>" if trend else ""
     st.markdown(
         f"""
-        <div class='kpi-card'>
+        <div class='kpi-card{variant_class}'>
             <div class='kpi-card__top'>
                 <span class='kpi-card__icon'>{icon}</span>
                 <span class='kpi-card__label'>{escape(str(label))}</span>

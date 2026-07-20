@@ -270,13 +270,13 @@ def test_build_kpi_cards_use_real_repository_metrics() -> None:
     metrics = _build_metrics(repository_data)
 
     cards = _build_kpi_cards(metrics)
-    card_map = {label: value for label, value, description, trend in cards}
+    card_map = {label: value for label, value, description, trend, variant in cards}
 
     assert card_map["Total Commits"] == "300"
     assert card_map["Total Contributors"] == "200"
     assert card_map["Open Issues"] == "128"
     assert card_map["Health Score"].endswith("%")
-    assert all(not trend for _, _, _, trend in cards)
+    assert all(not trend for _, _, _, trend, _ in cards)
     assert "Pending" not in card_map["Health Score"]
     assert "N/A" not in card_map["Health Score"]
 
@@ -313,8 +313,8 @@ def test_build_kpi_cards_refresh_when_metrics_change() -> None:
 
     cards_a = _build_kpi_cards(metrics_a)
     cards_b = _build_kpi_cards(metrics_b)
-    card_map_a = {label: value for label, value, description, trend in cards_a}
-    card_map_b = {label: value for label, value, description, trend in cards_b}
+    card_map_a = {label: value for label, value, description, trend, variant in cards_a}
+    card_map_b = {label: value for label, value, description, trend, variant in cards_b}
 
     assert card_map_a["Total Commits"] != card_map_b["Total Commits"]
     assert card_map_a["Stars"] != card_map_b["Stars"]
