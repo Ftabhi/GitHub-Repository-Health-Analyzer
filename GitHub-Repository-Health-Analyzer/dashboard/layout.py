@@ -106,15 +106,40 @@ def _build_kpi_cards(metrics: Dict[str, Any]) -> list[tuple[str, str, str, str]]
 
 
 def _render_kpi_cards(metrics: Dict[str, Any]) -> None:
-    """Render the executive KPI card grid from precomputed dashboard metrics."""
+    """Render the executive KPI card grid organized by logical category."""
     render_section_title("Executive KPIs", "Live engineering signals for the analyzed repository.")
     cards = _build_kpi_cards(metrics)
+    card_map = {label: (value, description) for label, value, description, _ in cards}
 
-    for row_start in range(0, len(cards), 4):
-        columns = st.columns(4)
-        for column, (label, value, description, _) in zip(columns, cards[row_start:row_start + 4]):
-            with column:
-                render_kpi_card(label, value, description)
+    # Group 1: General & Popularity
+    st.markdown("<h4 class='sidebar-section-header' style='margin: 18px 0 10px; font-size: 0.95rem;'>Metadata & Popularity</h4>", unsafe_allow_html=True)
+    g1_labels = ["Health Score", "Repository Age", "Stars", "Watchers", "Forks"]
+    g1_cols = st.columns(5)
+    for col, label in zip(g1_cols, g1_labels):
+        if label in card_map:
+            val, desc = card_map[label]
+            with col:
+                render_kpi_card(label, val, desc)
+
+    # Group 2: Development Activity
+    st.markdown("<h4 class='sidebar-section-header' style='margin: 18px 0 10px; font-size: 0.95rem;'>Development Activity</h4>", unsafe_allow_html=True)
+    g2_labels = ["Total Commits", "Total Contributors"]
+    g2_cols = st.columns(4)
+    for col, label in zip(g2_cols[:2], g2_labels):
+        if label in card_map:
+            val, desc = card_map[label]
+            with col:
+                render_kpi_card(label, val, desc)
+
+    # Group 3: Work Items (Issues & PRs)
+    st.markdown("<h4 class='sidebar-section-header' style='margin: 18px 0 10px; font-size: 0.95rem;'>Work Items</h4>", unsafe_allow_html=True)
+    g3_labels = ["Open Issues", "Closed Issues", "Open Pull Requests", "Merged Pull Requests"]
+    g3_cols = st.columns(4)
+    for col, label in zip(g3_cols, g3_labels):
+        if label in card_map:
+            val, desc = card_map[label]
+            with col:
+                render_kpi_card(label, val, desc)
 
 
 def _render_repository_intelligence(metrics: Dict[str, Any]) -> None:
@@ -233,12 +258,19 @@ def render_dashboard(
     repository_overview: Dict[str, str],
 ) -> None:
     """Render the main dashboard layout with KPIs, advanced charts, and premium insights."""
+    repo_name = repository_overview.get("Repository Name", "")
+    repo_owner = repository_overview.get("Owner", "")
+    repo_title = f"{repo_owner} / {repo_name}" if (repo_owner and repo_name) else "Repository Dashboard"
+    
     st.markdown(
-        "<div style='display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 26px;'>"
-        "<div><h1 style='margin: 0; font-size: 2.7rem;'>Executive Dashboard</h1>"
-        "<p style='margin: 10px 0 0; color: #8B949E; font-size: 1rem;'>Premium insights across repository stability, velocity, and community health.</p></div>"
-        "<div style='background: #161B22; border: 1px solid #30363D; border-radius: 18px; padding: 14px 24px; color: #58A6FF; font-weight: 600;'>Repository Analytics</div>"
-        "</div>",
+        f"<div class='dashboard-header'>"
+        f"<div>"
+        f"<span class='dashboard-eyebrow'>GitHub Repository Analytics</span>"
+        f"<h1 class='dashboard-title'>{escape(repo_title)}</h1>"
+        f"<p class='dashboard-subtitle'>Premium insights across repository stability, velocity, and community health.</p>"
+        f"</div>"
+        f"<div class='dashboard-badge'>Repository Analytics</div>"
+        f"</div>",
         unsafe_allow_html=True,
     )
 
